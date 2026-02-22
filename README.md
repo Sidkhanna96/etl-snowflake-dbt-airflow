@@ -1,45 +1,63 @@
-Overview
-========
+- ELT Pipelines (Extract Load Transform):
+  - Extract (ADF, Spark) -> Pull data from APIs, DBs or files
+  - Load (Snowflake, Databricks) -> Store data here
+  - Transform (DBT) -> Transform the data from one form to another
+  - Orchestrator (Airflow) -> Trigger pipelines on scheduled basis to perform transformation
 
-Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
+What I did:
 
-Project Contents
-================
+- Snowflake - Load
+  - Created a data warehouse and database along with assigning [roles](#sample-code)
+  - Leveraged the sample data from snowflake to transform data into created database
 
-Your Astro project contains the following files and folders:
+- DBT - Transform
+  - `dbt init`
+  - Created a Staging folder containing the first part of the Transformation process -> to fetch data from the warehouse (Snowflake Sample TPCH in this case)
+    - created sources yaml to [fetch](./dbt-dag-airflow/dags/dbt/data_pipeline/models/staging/tpch_sources.yml) from the datawarehouse -> What DB -> What tables
+    - Converted the data from sample snowflake DB into better naming strategy (Did this for both - lineItems and orders)
+    - `dbt run -s stg_tpch_orders.sql` when this command is ran it creates a schema of the same name in the dbt_db folder
+  - Created a marts folder for containing business logic:
+    - Fetch all of this through ref sd opposed to source command to conver the business logic of the dbt_db into a separate table
+  - Created macros functions for repeated multi use locations
+  - Created a fact tables:
+    - Containing numeric values of the quantitive instances of given set of sources containing foreign keys for other tables
+    - Grain - what one row in the table represents
 
-- dags: This folder contains the Python files for your Airflow DAGs. By default, this directory includes one example DAG:
-    - `example_astronauts`: This DAG shows a simple ETL pipeline example that queries the list of astronauts currently in space from the Open Notify API and prints a statement for each astronaut. The DAG uses the TaskFlow API to define tasks in Python, and dynamic task mapping to dynamically print a statement for each astronaut. For more on how this DAG works, see our [Getting started tutorial](https://www.astronomer.io/docs/learn/get-started-with-airflow).
-- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
-- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
-- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
-- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
-- plugins: Add custom or community plugins for your project to this file. It is empty by default.
-- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop DAGs in this project.
+- Airflow:
+  - `astro dev init`
+  - For running the staging and marts scripts on a schedule basis - i.e. tranforming the data from the db warehouses from various table and then placing it in our source db table
+  - Configuration:
+    - install astronomer - `brew install astro`
+    - Create a dockerfile for running on a docker container and its instance
+    - dbt_dag.py under dags folder to connect to the db warehouse
+    - dbt_project.yml - define the dbt tags
+    - Store the DBT transform code into dags/dbt/data_pipeline
+  - run the astro instance - `astro dev`
 
-Deploy Your Project Locally
-===========================
+### Sample Code
 
-Start Airflow on your local machine by running 'astro dev start'.
+Snowflake:
 
-This command will spin up five Docker containers on your machine, each for a different Airflow component:
+```sql
+use role accountadmin;
 
-- Postgres: Airflow's Metadata Database
-- Scheduler: The Airflow component responsible for monitoring and triggering tasks
-- DAG Processor: The Airflow component responsible for parsing DAGs
-- API Server: The Airflow component responsible for serving the Airflow UI and API
-- Triggerer: The Airflow component responsible for triggering deferred tasks
+create warehouse if not exists dbt_wh with warehouse_size='x-small'; -- Read heavy system to store data from various different sources - its a separate entity from a DB
+create database if not exists dbt_db;
+create role if not exists dbt_role;
 
-When all five containers are ready the command will open the browser to the Airflow UI at http://localhost:8080/. You should also be able to access your Postgres Database at 'localhost:5432/postgres' with username 'postgres' and password 'postgres'.
+show grants on warehouse dbt_wh;
 
-Note: If you already have either of the above ports allocated, you can either [stop your existing Docker containers or change the port](https://www.astronomer.io/docs/astro/cli/troubleshoot-locally#ports-are-not-available-for-my-local-airflow-webserver).
+grant usage on warehouse dbt_wh to role dbt_role;
+grant role dbt_role to user skidhs;
+grant all on database dbt_db to role dbt_role;
 
-Deploy Your Project to Astronomer
-=================================
+use role dbt_role;
 
-If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://www.astronomer.io/docs/astro/deploy-code/
+create schema if not exists dbt_db.dbt_schema;
 
-Contact
-=======
+use role accountadmin;
 
-The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
+drop warehouse if exists dbt_wh;
+drop database if exists dbt_db;
+drop role if exists dbt_role;
+```
