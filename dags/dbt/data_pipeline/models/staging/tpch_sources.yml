@@ -1,0 +1,22 @@
+# Creating a Sources Table from tpch_sf1 in snowflake sample DB and name is tpch
+
+version: 2
+
+sources:
+  - name: tpch
+    database: snowflake_sample_data # Actual Database on snowflake instance
+    schema: tpch_sf1
+    tables:
+      - name: orders
+        columns:
+          - name: o_orderkey
+            tests:
+              - unique
+              - not_null
+      - name: lineitem
+        columns:
+          - name: l_orderkey
+            tests:
+              - relationships:
+                  to: source('tpch', 'orders') # the l_orderkey is a foreign key to the lineitem table from o_orderkey field in orders
+                  field: o_orderkey
